@@ -1,0 +1,169 @@
+# ##################################################################
+#
+#   PROJETO DE ANÁLISE DE DADOS EM R
+#   Análise de Fatores de Churn de Clientes (Telco Customer Churn)
+#
+#   OBJETIVO: Identificar os principais fatores que influenciam
+#   o cancelamento de serviços por parte dos clientes para
+#   gerar insights de negócio.
+#
+# ##################################################################
+
+# --- Carregamento das bibliotecas necessárias ---
+library(tidyverse)
+
+## FASE 1: CARREGAMENTO E PREPARAÇÃO DOS DADOS
+# ------------------------------------------------------------------
+
+# Carrega o dataset a partir do arquivo .csv com o caminho ajustado para o seu computador.
+dados <- read.csv("C:/Users/emanu/Projetos/ufpr/estatisticaBasica/churnClientes/archive/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+
+# 1.1. Inspeção Inicial (equivalente a head, dim, names do seu script)
+glimpse(dados) # Uma versão melhorada do str() do tidyverse
+summary(dados) # Resumo estatístico inicial
+
+# 1.2. Limpeza dos Dados
+# A variável 'TotalCharges' possui valores ausentes (NA)
+# Vamos verificar quantos são
+sum(is.na(dados$TotalCharges))
+
+# Como são poucos (11), uma abordagem simples é remover as linhas com NAs
+dados <- dados %>%
+  drop_na(TotalCharges)
+
+# 1.3. Transformação das Variáveis (equivalente ao seu uso de factor())
+# Vamos converter variáveis de texto para fatores e ajustar a 'SeniorCitizen'
+dados <- dados %>%
+  mutate(
+    # Converte a coluna 'SeniorCitizen' (que é numérica 0/1) para um fator com rótulos
+    SeniorCitizen = factor(SeniorCitizen, levels = c(0, 1), labels = c("Não", "Sim")),
+    
+    # Converte todas as outras colunas de texto (character) para fatores
+    across(where(is.character), as.factor)
+  )
+
+# Confere a estrutura dos dados após a transformação
+glimpse(dados)
+
+
+## FASE 2: ANÁLISE UNIVARIADA (Analisando uma variável por vez)
+# ------------------------------------------------------------------
+# O objetivo é entender a distribuição de cada variável chave.
+
+# 2.1. Variável Resposta: Churn
+# Tabela de frequência
+table(dados$Churn)
+
+# Tabela de proporção
+prop.table(table(dados$Churn))
+
+# Gráfico de Barras com ggplot2 (mais profissional que o barplot base)
+ggplot(dados, aes(x = Churn, fill = Churn)) +
+  geom_bar(show.legend = FALSE) +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5) +
+  labs(title = "Distribuição de Clientes por Churn", x = "O Cliente Cancelou?", y = "Contagem") +
+  theme_minimal()
+
+# 2.2. Variáveis Numéricas: tenure, MonthlyCharges
+# Resumo estatístico
+summary(dados[, c("tenure", "MonthlyCharges", "TotalCharges")])
+
+# Histograma para 'MonthlyCharges'
+ggplot(dados, aes(x = MonthlyCharges)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(title = "Distribuição dos Gastos Mensais", x = "Gasto Mensal (USD)", y = "Contagem") +
+  theme_minimal()
+
+# Boxplot para 'tenure' (tempo de contrato em meses)
+ggplot(dados, aes(y = tenure)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(title = "Distribuição do Tempo de Contrato (Tenure)", y = "Meses como Cliente") +
+  theme_minimal()
+
+
+## FASE 3: ANÁLISE BIVARIADA (Cruzando variáveis para encontrar insights)
+# ------------------------------------------------------------------
+# Aqui o foco é entender como as outras variáveis se relacionam com o Churn.
+
+# 3.1. Relação: Churn vs. Tipo de Contrato (Categórica vs. Categórica)
+# Tabela de contingência
+tabela_contrato <- table(dados$Contract, dados$Churn)
+print(tabela_contrato)
+
+# Tabela de proporções (TAXA DE CHURN por tipo de contrato)
+# margin=1 calcula a proporção nas linhas. Essencial para a análise!
+prop.table(tabela_contrato, margin = 1)
+
+# Teste Qui-Quadrado para verificar se a associação é estatisticamente significante
+chisq.test(tabela_contrato) # Se p-value < 0.05, a relação é significante.
+
+# Gráfico de barras empilhadas 100% para visualizar a proporção
+grafico_contrato_churn <- ggplot(dados, aes(x = Contract, fill = Churn)) +
+  geom_bar(position = "fill") +
+  labs(title = "Taxa de Churn por Tipo de Contrato", x = "Tipo de Contrato", y = "Proporção de Clientes") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal()
+
+# Mostra o gráfico estático
+print(grafico_contrato_churn)
+
+# 3.2. Relação: Churn vs. Gasto Mensal (Categórica vs. Numérica)
+# Compara a distribuição dos gastos para quem deu churn vs. quem não deu
+grafico_gasto_churn <- ggplot(dados, aes(x = Churn, y = MonthlyCharges, fill = Churn)) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(title = "Gasto Mensal vs. Churn", x = "O Cliente Cancelou?", y = "Gasto Mensal (USD)") +
+  theme_minimal()
+
+# Mostra o gráfico estático
+print(grafico_gasto_churn)
+
+# Calcula a média de gasto para cada grupo (equivalente ao seu tapply/aggregate)
+dados %>%
+  group_by(Churn) %>%
+  summarise(
+    media_gasto_mensal = mean(MonthlyCharges),
+    mediana_gasto_mensal = median(MonthlyCharges)
+  )
+
+# 3.3. Relação: Tempo de Contrato vs. Gasto Total (Numérica vs. Numérica)
+# Gráfico de dispersão para visualizar a relação
+ggplot(dados, aes(x = tenure, y = TotalCharges)) +
+  geom_point(alpha = 0.3, color = "darkblue") + # alpha deixa os pontos transparentes
+  geom_smooth(method = "lm", color = "red") + # Adiciona uma linha de tendência
+  labs(title = "Gasto Total vs. Tempo de Contrato", x = "Tempo como Cliente (Meses)", y = "Gasto Total (USD)") +
+  theme_minimal()
+
+# Cálculo do coeficiente de correlação
+cor(dados$tenure, dados$TotalCharges)
+
+
+## FASE 4: ANÁLISE INTERATIVA (Bônus para Portfólio)
+# ------------------------------------------------------------------
+# Nesta fase, usamos as bibliotecas 'plotly' e 'DT' para adicionar
+# interatividade à nossa análise, o que é um grande diferencial.
+
+# 4.1. Instalando e Carregando as Bibliotecas
+# install.packages("plotly") # Execute se não tiver instalado
+# install.packages("DT")     # Execute se não tiver instalado
+library(plotly)
+library(DT)
+
+# 4.2. Tabela de Dados Interativa
+# Em vez de apenas olhar os dados no console, podemos explorá-los
+# em uma tabela com busca, filtro e paginação.
+datatable(dados, options = list(pageLength = 5, scrollX = TRUE))
+
+
+# 4.3. Convertendo Gráficos Estáticos em Interativos
+# Usamos a função ggplotly() para dar vida aos gráficos que criamos na Fase 3.
+
+# Exemplo 1: Gráfico de Contrato vs. Churn
+# O usuário agora pode passar o mouse sobre as barras para ver os valores exatos.
+ggplotly(grafico_contrato_churn)
+
+# Exemplo 2: Boxplot de Gasto Mensal vs. Churn
+# O usuário pode passar o mouse para ver os quartis, mediana, etc.
+ggplotly(grafico_gasto_churn)
+
+
+# ######################### FIM DO SCRIPT #########################
